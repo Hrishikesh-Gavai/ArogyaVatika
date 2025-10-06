@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#10b981" />
+    <meta name="description" content="ArogyaVatika - Climate-Smart Virtual Herbal Garden for AVUSH, Sustainable Living & Wellness. Explore medicinal plants with interactive 3D models." />
+    <meta name="keywords" content="medicinal plants, herbal garden, Ayurveda, sustainability, climate resilience, 3D plants, ArogyaVatika" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="ArogyaVatika - Garden of Wellness" />
+    <meta property="og:description" content="Climate-Smart Virtual Herbal Garden for AVUSH, Sustainable Living & Wellness" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://arogyavatika.com" />
+    <!-- Add your logo image URL here when available -->
+    <!-- <meta property="og:image" content="%PUBLIC_URL%/og-image.png" /> -->
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ArogyaVatika - Garden of Wellness" />
+    <meta name="twitter:description" content="Climate-Smart Virtual Herbal Garden for AVUSH, Sustainable Living & Wellness" />
+    
+    <!-- Additional SEO Meta Tags -->
+    <meta name="author" content="ArogyaVatika Team" />
+    <meta name="robots" content="index, follow" />
+    
+    <title>ArogyaVatika - Climate-Smart Virtual Herbal Garden | AVUSH Wellness</title>
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" as="style" />
+    
+    <!-- Structured Data for SEO -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "ArogyaVatika",
+      "description": "Climate-Smart Virtual Herbal Garden for AVUSH, Sustainable Living & Wellness",
+      "url": "https://arogyavatika.com",
+      "applicationCategory": "HealthApplication",
+      "operatingSystem": "Web Browser",
+      "permissions": "microphone, camera",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+  </head>
+  <body>
+    <noscript>
+      <div style="text-align: center; padding: 2rem; font-family: Inter, sans-serif;">
+        <h1>JavaScript Required</h1>
+        <p>You need to enable JavaScript to run ArogyaVatika application.</p>
+        <p>Please enable JavaScript in your browser settings and refresh the page.</p>
+      </div>
+    </noscript>
+    <div id="root"></div>
+    
+    <!-- Loading fallback for slow connections -->
+    <script>
+      // Show loading indicator if React takes too long to load
+      setTimeout(function() {
+        if (!document.getElementById('root').hasChildNodes()) {
+          document.body.innerHTML = `
+            <div style="display: flex; justify-content: center; align-items: center; height: 100vh; flex-direction: column; font-family: Inter, sans-serif;">
+              <div style="width: 40px; height: 40px; border: 4px solid #f3f4f6; border-top: 4px solid #10b981; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+              <p style="margin-top: 1rem; color: #6b7280;">Loading ArogyaVatika...</p>
+            </div>
+            <style>
+              @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+              }
+            </style>
+          `;
+        }
+      }, 3000);
+    </script>
+  </body>
+</html>
