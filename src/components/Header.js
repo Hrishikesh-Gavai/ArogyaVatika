@@ -48,7 +48,7 @@ const Header = () => {
       icon: <ShoppingCart size={18} />,
       title: 'Marketplace',
       external: true,
-      path: 'https://www.amazon.in/',
+      path: 'https://arogya-ecommerce.vercel.app/',
     }
   ];
 
