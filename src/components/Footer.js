@@ -48,7 +48,7 @@ const Footer = () => {
             
             <div className="footer-section">
               <h4>Resources</h4>
-              <a href="https://www.amazon.in/" target="_blank" rel="noopener noreferrer">
+              <a href="https://arogya-ecommerce.vercel.app" target="_blank" rel="noopener noreferrer">
                 Marketplace
               </a>
               <Link to="/learn">Learning Centre</Link>
