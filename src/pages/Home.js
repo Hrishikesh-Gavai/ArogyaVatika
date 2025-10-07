@@ -57,7 +57,7 @@ const Home = () => {
       icon: <ShoppingCart />,
       title: 'Eco Marketplace',
       description: 'Shop for seeds, saplings, and garden tools with AI recommendations based on your location and garden type.',
-      path: 'https://www.amazon.in/',
+      path: 'https://arogya-ecommerce.vercel.app',
       color: 'yellow',
       external: true
     }
