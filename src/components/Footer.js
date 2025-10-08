@@ -28,7 +28,7 @@ const Footer = () => {
               <a href="https://www.instagram.com" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
                 <Instagram size={20} />
               </a>
-              <a href="https://www.github.com" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+              <a href="https://github.com/Hrishikesh-Gavai/ArogyaVatika.git" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
                 <Github size={20} />
               </a>
             </div>
@@ -61,7 +61,7 @@ const Footer = () => {
               <a href="https://drive.google.com/drive/folders/1gPL3aQoWDRBuMukKo6yhykzlbz8vZxt6?usp=drive_link" target="_blank" rel="noopener noreferrer">About Us</a>
               <a href="https://drive.google.com/drive/folders/1gPL3aQoWDRBuMukKo6yhykzlbz8vZxt6?usp=drive_link" target="_blank" rel="noopener noreferrer">Our Mission</a>
               <a href="https://drive.google.com/drive/folders/1gPL3aQoWDRBuMukKo6yhykzlbz8vZxt6?usp=drive_link" target="_blank" rel="noopener noreferrer">Team</a>
-              <a href="https://github.com" target="_blank" rel="noopener noreferrer">
+              <a href="https://github.com/Hrishikesh-Gavai/ArogyaVatika.git" target="_blank" rel="noopener noreferrer">
                 <Mail size={16} />
                 Contact Us
               </a>
@@ -70,7 +70,7 @@ const Footer = () => {
             
             <div className="footer-section">
               <h4>Support</h4>
-              <a href="https://github.com" target="_blank" rel="noopener noreferrer">
+              <a href="https://github.com/Hrishikesh-Gavai/ArogyaVatika.git" target="_blank" rel="noopener noreferrer">
                 <Mail size={16} />
                 GitHub Issues
               </a>
