@@ -2,11 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    
+    <!-- ✅ FIXED: Favicon paths (no %PUBLIC_URL% - Vercel doesn't replace it) -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#10b981" />
     <meta name="description" content="ArogyaVatika - Climate-Smart Virtual Herbal Garden for AVUSH, Sustainable Living & Wellness. Explore medicinal plants with interactive 3D models." />
     <meta name="keywords" content="medicinal plants, herbal garden, Ayurveda, sustainability, climate resilience, 3D plants, ArogyaVatika" />
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,9 +22,7 @@
     <meta property="og:title" content="ArogyaVatika - Garden of Wellness" />
     <meta property="og:description" content="Climate-Smart Virtual Herbal Garden for AVUSH, Sustainable Living & Wellness" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://arogyavatika.com" />
-    <!-- Add your logo image URL here when available -->
-    <!-- <meta property="og:image" content="%PUBLIC_URL%/og-image.png" /> -->
+    <meta property="og:url" content="https://arogyavatika.vercel.app" />
     
     <!-- Twitter Card Meta Tags -->
     <meta name="twitter:card" content="summary_large_image" />
@@ -25,7 +30,7 @@
     <meta name="twitter:description" content="Climate-Smart Virtual Herbal Garden for AVUSH, Sustainable Living & Wellness" />
     
     <!-- Additional SEO Meta Tags -->
-    <meta name="author" content="ArogyaVatika Team" />
+    <meta name="author" content="ArogyaVatika Team (N.E.R.V.)" />
     <meta name="robots" content="index, follow" />
     
     <title>ArogyaVatika - Climate-Smart Virtual Herbal Garden | AVUSH Wellness</title>
@@ -40,7 +45,7 @@
       "@type": "WebApplication",
       "name": "ArogyaVatika",
       "description": "Climate-Smart Virtual Herbal Garden for AVUSH, Sustainable Living & Wellness",
-      "url": "https://arogyavatika.com",
+      "url": "https://arogyavatika.vercel.app",
       "applicationCategory": "HealthApplication",
       "operatingSystem": "Web Browser",
       "permissions": "microphone, camera",
