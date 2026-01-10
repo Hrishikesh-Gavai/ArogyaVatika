@@ -61,27 +61,27 @@ function App() {
   // Return your main app once loading is complete
   return (
     <ThemeProvider>
-      <Router>
-        <div className="App">
-          <Header />
-          <main>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/garden" element={<VirtualGarden />} />
-              <Route path="/planner" element={<GardenPlanner />} />
-              <Route path="/carbon" element={<CarbonCalculator />} />
-              <Route path="/search" element={<AIHerbSearch />} />
-              <Route path="/diy" element={<DIYZone />} />
-              <Route path="/learn" element={<Microlearning />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/avl" element={<AVL />} />
-              <Route path="/delivery" element={<DeliveryManagement />} />
-            </Routes>
-          </main>
-          <Footer />
-        </div>
-      </Router>
+        <Router>
+          <div className="App">
+            <Header />
+            <main>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/garden" element={<VirtualGarden />} />
+                <Route path="/planner" element={<GardenPlanner />} />
+                <Route path="/carbon" element={<CarbonCalculator />} />
+                <Route path="/search" element={<AIHerbSearch />} />
+                <Route path="/diy" element={<DIYZone />} />
+                <Route path="/learn" element={<Microlearning />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/avl" element={<AVL />} />
+                <Route path="/delivery" element={<DeliveryManagement />} />
+              </Routes>
+            </main>
+            <Footer />
+          </div>
+        </Router>
     </ThemeProvider>
   );
 }
