@@ -82,7 +82,7 @@ Optimized logistics for eco-friendly seed, sapling & product delivery across 12 
 ## 👥 Team N.E.R.V.
 **Hrishikesh Gavai**  
 **Yash Gatkal**  
-**Siddhesh Gite**
+**Siddhesh Gite**  
 **Ankit Khandelwal**
 🎓 TY-A Computer Engineering, K.K.W.I.E.E.R
 
