@@ -83,6 +83,7 @@ Optimized logistics for eco-friendly seed, sapling & product delivery across 12 
 **Hrishikesh Gavai**  
 **Yash Gatkal**  
 **Siddhesh Gite**  
+**Ankit Khandelwal**  
 🎓 TY-A Computer Engineering, K.K.W.I.E.E.R
 
 ---

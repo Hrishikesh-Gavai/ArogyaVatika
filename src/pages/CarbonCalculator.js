@@ -153,7 +153,7 @@ That's equivalent to ${carKm} km of car travel or ${phoneDays} days of smartphon
       }
 
       // Use the correct model name - gemini-pro is more reliable
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       
       const prompt = `
         As an environmental AI assistant, provide a friendly, encouraging insight about carbon offsetting through gardening.

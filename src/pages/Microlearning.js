@@ -142,7 +142,7 @@ const Microlearning = () => {
 
       // Use the new Google GenAI SDK
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash", // Using the recommended model
+        model: "gemini-2.5-flash", // Using the recommended model
         contents: prompt,
       });
 
