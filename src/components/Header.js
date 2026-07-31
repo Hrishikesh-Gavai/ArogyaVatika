@@ -75,8 +75,8 @@ const Header = () => {
       title: 'Marketplace',
       external: true,
       path: 'https://arogya-ecommerce.vercel.app/',
-    },
-    {
+    }
+    /*{
       icon: <GitBranch size={18} />,
       title: 'AVL Plant Editor',
       path: '/avl',
@@ -85,7 +85,7 @@ const Header = () => {
       icon: <Truck size={18} />,
       title: 'Delivery Routes',
       path: '/delivery',
-    }
+    }*/
   ];
 
   const handleLogin = () => {
