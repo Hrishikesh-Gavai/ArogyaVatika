@@ -81,6 +81,89 @@ const cityCoordinates = {
   Jabalpur: [23.1815, 79.9864]
 };
 
+// ---------------------------------------------------------------------------
+// Google Gen AI setup (@google/genai SDK)
+// ---------------------------------------------------------------------------
+const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
+const GEMINI_MODEL = 'gemini-3.1-flash-lite';
+const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
+
+// Tell the model to answer in plain text (no Markdown)
+const PLAIN_TEXT_INSTRUCTION =
+  'Write in plain text only. Never use Markdown: no asterisks, no bold or italics, ' +
+  'no headings, no code fences, no backticks and no bullet symbols.';
+
+// Safety net: strip any Markdown the model still adds (**, *, #, `, ```)
+const stripMarkdown = (text = '') =>
+  String(text)
+    .replace(/```[a-zA-Z]*\n?/g, '')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*[*+-]\s+/gm, '')
+    .replace(/\*/g, '')
+    .trim();
+
+// Retry automatically when Gemini is busy (503 / 429 / 500 / 504)
+const RETRYABLE_STATUS = [429, 500, 503, 504];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryable = (error) => {
+  const status = error?.status ?? error?.code;
+  return (
+    RETRYABLE_STATUS.includes(status) ||
+    /UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|overloaded|Failed to fetch/i.test(error?.message || '')
+  );
+};
+
+// Turn raw API errors into short, readable messages for the UI
+const toFriendlyError = (error) => {
+  const status = error?.status ?? error?.code;
+  const message = error?.message || '';
+  if (status === 503 || /UNAVAILABLE|high demand|overloaded/i.test(message)) {
+    return new Error('The AI service is busy right now. Please try again in a moment.');
+  }
+  if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(message)) {
+    return new Error('AI usage limit reached. Please wait a minute and try again.');
+  }
+  if (status === 404) {
+    return new Error('The AI model could not be found. Please check the model name.');
+  }
+  if (status === 400 || status === 401 || status === 403) {
+    return new Error('The AI request was rejected. Please check your Gemini API key.');
+  }
+  return new Error('Something went wrong with the AI request. Please try again.');
+};
+
+// generateContent with exponential backoff (about 1s, 2s, 4s between tries)
+const generateWithRetry = async (request, maxAttempts = 4) => {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await ai.models.generateContent({ model: GEMINI_MODEL, ...request });
+    } catch (error) {
+      lastError = error;
+      if (!isRetryable(error) || attempt === maxAttempts) break;
+      const delay = 1000 * 2 ** (attempt - 1) + Math.random() * 500;
+      console.warn(`Gemini busy (attempt ${attempt}/${maxAttempts}), retrying in ${Math.round(delay)} ms`);
+      await sleep(delay);
+    }
+  }
+  console.error('Gemini request failed:', lastError);
+  throw toFriendlyError(lastError);
+};
+
+// Clean every string inside a parsed JSON response
+const cleanDeep = (value) => {
+  if (typeof value === 'string') return stripMarkdown(value);
+  if (Array.isArray(value)) return value.map(cleanDeep);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, cleanDeep(v)]));
+  }
+  return value;
+};
+
 // Component to update map center
 function MapUpdater({ center }) {
   const map = useMap();
@@ -129,10 +212,6 @@ const GardenPlanner = () => {
   const [citySuggestions, setCitySuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showMap, setShowMap] = useState(false);
-
-  // Initialize Google GenAI
-  const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
-  const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
 
   // Major Indian cities for suggestions
   const indianCities = [
@@ -255,19 +334,23 @@ const GardenPlanner = () => {
         - Consider seasonal variations in Indian climate
       `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+      const response = await generateWithRetry({
         contents: prompt,
+        config: {
+          systemInstruction: PLAIN_TEXT_INSTRUCTION,
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: 'LOW' },
+        },
       });
 
-      const text = response.text;
+      const text = response.text || '';
       let cleanedText = text.replace(/```json|```/g, '').trim();
       const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         cleanedText = jsonMatch[0];
       }
-      
-      const planData = JSON.parse(cleanedText);
+
+      const planData = cleanDeep(JSON.parse(cleanedText));
       setGardenPlan(planData);
 
       // Generate AI tips
@@ -275,7 +358,7 @@ const GardenPlanner = () => {
 
     } catch (error) {
       console.error('Error generating garden plan:', error);
-      alert('Failed to generate garden plan. Please try again.');
+      alert(error.message || 'Failed to generate garden plan. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -284,9 +367,13 @@ const GardenPlanner = () => {
   // Generate AI tips based on garden plan
   const generateAiTips = async (planData) => {
     try {
+      if (!ai) {
+        throw new Error('AI service not available. Please check your API key.');
+      }
+
       const prompt = `
         Based on this garden plan data for ${location}: ${JSON.stringify(planData)}
-        
+
         Generate 3-5 smart AI tips for garden optimization. Return as JSON array:
         [
           {
@@ -297,23 +384,27 @@ const GardenPlanner = () => {
             "category": "watering/planting/maintenance/harvesting"
           }
         ]
-        
+
         Make tips very practical and actionable.
       `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+      const response = await generateWithRetry({
         contents: prompt,
+        config: {
+          systemInstruction: PLAIN_TEXT_INSTRUCTION,
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: 'LOW' },
+        },
       });
 
-      const text = response.text;
+      const text = response.text || '';
       let cleanedText = text.replace(/```json|```/g, '').trim();
       const jsonMatch = cleanedText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         cleanedText = jsonMatch[0];
       }
-      
-      const tips = JSON.parse(cleanedText);
+
+      const tips = cleanDeep(JSON.parse(cleanedText));
       setAiTips(tips);
 
     } catch (error) {
@@ -405,7 +496,7 @@ const GardenPlanner = () => {
                   )}
                 </div>
                 <small>Enter your city name for climate-specific recommendations</small>
-                
+
                 {/* Map Toggle Button */}
                 {location && indianCities.includes(location) && (
                   <button 
@@ -530,7 +621,7 @@ const GardenPlanner = () => {
             <div className="plan-header">
               <h2>Your AI-Generated Garden Plan for {location}</h2>
               <p>Climate-smart recommendations tailored for your city</p>
-              
+
               {/* Map toggle in plan header */}
               {location && (
                 <button 
@@ -607,9 +698,9 @@ const GardenPlanner = () => {
                       <h4>{plant.name}</h4>
                       <span className="botanical-name">{plant.botanical_name}</span>
                     </div>
-                    
+
                     <p className="plant-reason">{plant.reason}</p>
-                    
+
                     <div className="plant-details-grid">
                       <div className="detail-item">
                         <div className="detail-icon">
@@ -774,7 +865,7 @@ const GardenPlanner = () => {
               <BarChart3 size={64} />
               <h3>Smart Garden Design</h3>
               <p>Fill out the form above to get your personalized AI-powered garden plan with climate-suitable plant recommendations</p>
-              
+
               <div className="feature-grid">
                 <div className="feature-card">
                   <Map size={32} />
