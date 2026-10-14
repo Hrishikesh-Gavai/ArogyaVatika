@@ -21,6 +21,40 @@ import {
   ChevronRight
 } from 'lucide-react';
 
+// ---------------------------------------------------------------------------
+// Google Gen AI setup (@google/genai SDK)
+// ---------------------------------------------------------------------------
+const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
+const GEMINI_MODEL = 'gemini-3.1-flash-lite';
+const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
+
+// Tell the model to answer in plain text (no Markdown)
+const PLAIN_TEXT_INSTRUCTION =
+  'Write in plain text only. Never use Markdown: no asterisks, no bold or italics, ' +
+  'no headings, no code fences, no backticks and no bullet symbols.';
+
+// Safety net: strip any Markdown the model still adds (**, *, #, `, ```)
+const stripMarkdown = (text = '') =>
+  String(text)
+    .replace(/```[a-zA-Z]*\n?/g, '')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*[*+-]\s+/gm, '')
+    .replace(/\*/g, '')
+    .trim();
+
+// Clean every string inside a parsed JSON response
+const cleanDeep = (value) => {
+  if (typeof value === 'string') return stripMarkdown(value);
+  if (Array.isArray(value)) return value.map(cleanDeep);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, cleanDeep(v)]));
+  }
+  return value;
+};
+
 const AIHerbSearch = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [herbData, setHerbData] = useState(null);
@@ -29,10 +63,6 @@ const AIHerbSearch = () => {
   const [error, setError] = useState(null);
   const [searchMode, setSearchMode] = useState('single'); // 'single' or 'multiple'
   const searchInputRef = useRef(null);
-
-  // Initialize Google GenAI
-  const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
-  const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
 
   // Debug useEffect
   useEffect(() => {
@@ -68,7 +98,7 @@ const AIHerbSearch = () => {
 // Detect search mode based on query
 const detectSearchMode = (query) => {
   const lowerQuery = query.toLowerCase().trim();
-  
+
   // Specific plant names (exact matches or contains)
   const specificPlants = [
     'lemon', 'ginger', 'tulsi', 'ashwagandha', 'turmeric', 'aloe vera', 
@@ -113,7 +143,7 @@ const detectSearchMode = (query) => {
     try {
       const prompt = `
         Provide comprehensive information about the specific plant: "${query}"
-        
+
         Return ONLY a valid JSON object with the following exact structure. No additional text, no markdown, just pure JSON:
         {
           "botanical_name": "scientific name",
@@ -146,25 +176,30 @@ const detectSearchMode = (query) => {
       `;
 
       const response = await ai.models.generateContent({
-        model: "models/gemini-3.1-flash-lite",
+        model: GEMINI_MODEL,
         contents: prompt,
+        config: {
+          systemInstruction: PLAIN_TEXT_INSTRUCTION,
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: 'LOW' },
+        },
       });
 
-      const text = response.text;
+      const text = response.text || '';
       console.log('Raw AI response for single plant:', text);
-      
+
       let cleanedText = text.replace(/```json|```/g, '').trim();
       const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         cleanedText = jsonMatch[0];
       }
-      
-      const parsedData = JSON.parse(cleanedText);
+
+      const parsedData = cleanDeep(JSON.parse(cleanedText));
       const validatedData = {
         ...createDefaultHerbData(query),
         ...parsedData
       };
-      
+
       return validatedData;
 
     } catch (error) {
@@ -178,7 +213,7 @@ const detectSearchMode = (query) => {
     try {
       const prompt = `
         For the medicinal use query: "${query}", recommend 3-6 specific medicinal plants that are scientifically known to be effective.
-        
+
         Return ONLY a valid JSON array with the following structure. No additional text, no markdown, just pure JSON:
         [
           {
@@ -204,22 +239,27 @@ const detectSearchMode = (query) => {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_MODEL,
         contents: prompt,
+        config: {
+          systemInstruction: PLAIN_TEXT_INSTRUCTION,
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: 'LOW' },
+        },
       });
 
-      const text = response.text;
+      const text = response.text || '';
       console.log('Raw recommendations response:', text);
-      
+
       let cleanedText = text.replace(/```json|```/g, '').trim();
       const jsonMatch = cleanedText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         cleanedText = jsonMatch[0];
       }
-      
-      const parsedData = JSON.parse(cleanedText);
+
+      const parsedData = cleanDeep(JSON.parse(cleanedText));
       const recommendations = Array.isArray(parsedData) ? parsedData.slice(0, 6) : [];
-      
+
       console.log('Parsed recommendations:', recommendations);
       return recommendations;
 
@@ -257,18 +297,18 @@ const detectSearchMode = (query) => {
         console.log('Searching for plant recommendations:', query);
         const recommendations = await searchPlantRecommendations(query);
         console.log('Final recommendations:', recommendations);
-        
+
         if (!recommendations || recommendations.length === 0) {
           throw new Error('No specific plant recommendations found. Try searching for a specific plant name.');
         }
-        
+
         setPlantRecommendations(recommendations);
       }
 
     } catch (error) {
       console.error('Error searching herbs:', error);
       setError(error.message || 'Failed to fetch plant information. Please try again with a different query.');
-      
+
       // Set fallback data for single plant mode
       if (searchMode === 'single') {
         setHerbData(createDefaultHerbData(query));
@@ -322,7 +362,7 @@ const detectSearchMode = (query) => {
           <h2>Recommended Plants</h2>
           <p>Found {recommendations.length} plants that match your search. Click on any plant to see detailed information.</p>
         </div>
-        
+
         <div className="recommendations-grid">
           {recommendations.map((plant, index) => (
             <div 
@@ -335,7 +375,7 @@ const detectSearchMode = (query) => {
                   <h3>{safeString(plant.common_name)}</h3>
                   <p className="botanical-name">{safeString(plant.botanical_name)}</p>
                 </div>
-                
+
                 <div className="view-details">
                   <span>View Details</span>
                   <ChevronRight size={16} />
