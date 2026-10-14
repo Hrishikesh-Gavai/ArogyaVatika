@@ -146,7 +146,7 @@ const detectSearchMode = (query) => {
       `;
 
       const response = await ai.models.generateContent({
-        model: "models/gemini-3.8-flash",
+        model: "models/gemini-3.1-flash-lite",
         contents: prompt,
       });
 
