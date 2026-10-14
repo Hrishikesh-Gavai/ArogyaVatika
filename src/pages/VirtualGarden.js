@@ -5,6 +5,99 @@ import PlantModal from '../components/PlantModal';
 import PlantCard from '../components/PlantCard';
 import LoadingScreen from '../components/LoadingScreen';
 
+// ---------------------------------------------------------------------------
+// Supabase Storage image helpers
+// ---------------------------------------------------------------------------
+
+// Name of the Supabase Storage bucket that holds the plant images.
+// Change 'plant-images' to your bucket's exact name (case-sensitive),
+// or set REACT_APP_PLANT_IMAGES_BUCKET in your .env file.
+const PLANT_IMAGES_BUCKET = process.env.REACT_APP_PLANT_IMAGES_BUCKET || 'plant-images';
+
+// Columns that may hold the image value (the first non-empty one is used)
+const IMAGE_FIELDS = ['image_url', 'image', 'image_path', 'photo_url', 'thumbnail_url'];
+
+// How long signed URLs stay valid (only matters for private buckets)
+const SIGNED_URL_EXPIRY_SECONDS = 60 * 60 * 24; // 24 hours
+
+const getImageField = (plant) =>
+  IMAGE_FIELDS.find((field) => typeof plant[field] === 'string' && plant[field].trim() !== '');
+
+// Work out which bucket + file path a stored image value points to.
+// Returns null for normal web URLs (e.g. Unsplash) so they are used as-is.
+const parseStorageLocation = (value) => {
+  const raw = value.trim();
+
+  // A full Supabase Storage URL (public, signed or authenticated)
+  const match = raw.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/([^?#]+)/);
+  if (match) {
+    return { bucket: match[1], path: decodeURIComponent(match[2]) };
+  }
+
+  // Any other URL is left untouched
+  if (/^(https?:|data:|blob:)/i.test(raw)) return null;
+
+  // A plain file path, e.g. "tulsi.jpg", "/tulsi.jpg" or "plant-images/tulsi.jpg"
+  let path = raw.replace(/^\/+/, '');
+  if (path.startsWith(`${PLANT_IMAGES_BUCKET}/`)) {
+    path = path.slice(PLANT_IMAGES_BUCKET.length + 1);
+  }
+  return { bucket: PLANT_IMAGES_BUCKET, path };
+};
+
+// Convert every plant's stored image value into a URL the browser can load.
+// Tries a signed URL first (works for private AND public buckets), then
+// falls back to the public URL. Nothing else on the plant is changed.
+const resolvePlantImages = async (plantList) => {
+  const jobs = plantList.map((plant) => {
+    const field = getImageField(plant);
+    const location = field ? parseStorageLocation(plant[field]) : null;
+    return { plant, field, location, url: null };
+  });
+
+  // Group by bucket so each bucket needs only one request
+  const jobsByBucket = {};
+  jobs.forEach((job) => {
+    if (!job.location) return;
+    if (!jobsByBucket[job.location.bucket]) jobsByBucket[job.location.bucket] = [];
+    jobsByBucket[job.location.bucket].push(job);
+  });
+
+  await Promise.all(
+    Object.entries(jobsByBucket).map(async ([bucket, bucketJobs]) => {
+      const storage = supabase.storage.from(bucket);
+      const paths = [...new Set(bucketJobs.map((job) => job.location.path))];
+      const signedUrls = {};
+
+      try {
+        const { data, error } = await storage.createSignedUrls(paths, SIGNED_URL_EXPIRY_SECONDS);
+        if (error) throw error;
+        (data || []).forEach((item, index) => {
+          if (item && item.signedUrl && !item.error) {
+            signedUrls[paths[index]] = item.signedUrl;
+          }
+        });
+      } catch (err) {
+        console.warn(`Could not create signed URLs for bucket "${bucket}", using public URLs instead:`, err);
+      }
+
+      bucketJobs.forEach((job) => {
+        job.url =
+          signedUrls[job.location.path] ||
+          storage.getPublicUrl(job.location.path).data.publicUrl;
+      });
+    })
+  );
+
+  return jobs.map(({ plant, field, url }) => {
+    if (!field) return plant;
+    const finalUrl = url || plant[field].trim();
+    // Write the working URL back into the original column, and also into
+    // image_url so components reading either name get the right link.
+    return { ...plant, [field]: finalUrl, image_url: finalUrl };
+  });
+};
+
 const VirtualGarden = () => {
   const [plants, setPlants] = useState([]);
   const [filteredPlants, setFilteredPlants] = useState([]);
@@ -38,7 +131,17 @@ const VirtualGarden = () => {
         .order('common_name');
 
       if (error) throw error;
-      setPlants(data || []);
+
+      // Turn stored image paths into working Supabase Storage URLs.
+      // If anything goes wrong here, still show the plants with their original data.
+      let plantsWithImages = data || [];
+      try {
+        plantsWithImages = await resolvePlantImages(plantsWithImages);
+      } catch (imageError) {
+        console.error('Error resolving plant image URLs:', imageError);
+      }
+
+      setPlants(plantsWithImages);
     } catch (error) {
       console.error('Error fetching plants:', error);
     } finally {
