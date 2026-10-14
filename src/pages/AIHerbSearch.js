@@ -25,7 +25,7 @@ import {
 // Google Gen AI setup (@google/genai SDK)
 // ---------------------------------------------------------------------------
 const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-3.1-flash-lite';
+const GEMINI_MODEL = 'gemini-3.5-flash';
 const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
 
 // Tell the model to answer in plain text (no Markdown)
@@ -44,6 +44,55 @@ const stripMarkdown = (text = '') =>
     .replace(/^\s*[*+-]\s+/gm, '')
     .replace(/\*/g, '')
     .trim();
+
+// Retry automatically when Gemini is busy (503 / 429 / 500 / 504)
+const RETRYABLE_STATUS = [429, 500, 503, 504];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryable = (error) => {
+  const status = error?.status ?? error?.code;
+  return (
+    RETRYABLE_STATUS.includes(status) ||
+    /UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|overloaded|Failed to fetch/i.test(error?.message || '')
+  );
+};
+
+// Turn raw API errors into short, readable messages for the UI
+const toFriendlyError = (error) => {
+  const status = error?.status ?? error?.code;
+  const message = error?.message || '';
+  if (status === 503 || /UNAVAILABLE|high demand|overloaded/i.test(message)) {
+    return new Error('The AI service is busy right now. Please try again in a moment.');
+  }
+  if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(message)) {
+    return new Error('AI usage limit reached. Please wait a minute and try again.');
+  }
+  if (status === 404) {
+    return new Error('The AI model could not be found. Please check the model name.');
+  }
+  if (status === 400 || status === 401 || status === 403) {
+    return new Error('The AI request was rejected. Please check your Gemini API key.');
+  }
+  return new Error('Something went wrong with the AI request. Please try again.');
+};
+
+// generateContent with exponential backoff (about 1s, 2s, 4s between tries)
+const generateWithRetry = async (request, maxAttempts = 4) => {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await ai.models.generateContent({ model: GEMINI_MODEL, ...request });
+    } catch (error) {
+      lastError = error;
+      if (!isRetryable(error) || attempt === maxAttempts) break;
+      const delay = 1000 * 2 ** (attempt - 1) + Math.random() * 500;
+      console.warn(`Gemini busy (attempt ${attempt}/${maxAttempts}), retrying in ${Math.round(delay)} ms`);
+      await sleep(delay);
+    }
+  }
+  console.error('Gemini request failed:', lastError);
+  throw toFriendlyError(lastError);
+};
 
 // Clean every string inside a parsed JSON response
 const cleanDeep = (value) => {
@@ -175,8 +224,7 @@ const detectSearchMode = (query) => {
         - Make the information accurate and comprehensive
       `;
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const response = await generateWithRetry({
         contents: prompt,
         config: {
           systemInstruction: PLAIN_TEXT_INSTRUCTION,
@@ -238,8 +286,7 @@ const detectSearchMode = (query) => {
         - Do not include any other fields, only common_name and botanical_name
       `;
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+      const response = await generateWithRetry({
         contents: prompt,
         config: {
           systemInstruction: PLAIN_TEXT_INSTRUCTION,
@@ -265,7 +312,7 @@ const detectSearchMode = (query) => {
 
     } catch (error) {
       console.error('Error searching plant recommendations:', error);
-      throw new Error('Failed to get plant recommendations. Please try again.');
+      throw error;
     }
   };
 
