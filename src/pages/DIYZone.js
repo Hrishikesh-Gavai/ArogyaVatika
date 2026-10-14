@@ -1,10 +1,84 @@
 import React, { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { GoogleGenAI } from "@google/genai";
 import { 
   Recycle, ArrowLeft, Hammer, Sparkles, Upload, 
   Search, Play, Youtube, Trash2, Image,
   Loader, AlertCircle, CheckCircle, FileImage
 } from 'lucide-react';
+
+// ---------------------------------------------------------------------------
+// Google Gen AI setup (@google/genai SDK)
+// ---------------------------------------------------------------------------
+const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
+const GEMINI_MODEL = 'gemini-3.1-flash-lite';
+const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
+
+// Tell the model to answer in plain text (no Markdown)
+const PLAIN_TEXT_INSTRUCTION =
+  'Write in plain text only. Never use Markdown: no asterisks, no bold or italics, ' +
+  'no headings, no code fences, no backticks and no bullet symbols.';
+
+// Safety net: strip any Markdown the model still adds (**, *, #, `, ```)
+const stripMarkdown = (text = '') =>
+  String(text)
+    .replace(/```[a-zA-Z]*\n?/g, '')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*[*+-]\s+/gm, '')
+    .replace(/\*/g, '')
+    .trim();
+
+// Retry automatically when Gemini is busy (503 / 429 / 500 / 504)
+const RETRYABLE_STATUS = [429, 500, 503, 504];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryable = (error) => {
+  const status = error?.status ?? error?.code;
+  return (
+    RETRYABLE_STATUS.includes(status) ||
+    /UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|overloaded|Failed to fetch/i.test(error?.message || '')
+  );
+};
+
+// Turn raw API errors into short, readable messages for the UI
+const toFriendlyError = (error) => {
+  const status = error?.status ?? error?.code;
+  const message = error?.message || '';
+  if (status === 503 || /UNAVAILABLE|high demand|overloaded/i.test(message)) {
+    return new Error('The AI service is busy right now. Please try again in a moment.');
+  }
+  if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(message)) {
+    return new Error('AI usage limit reached. Please wait a minute and try again.');
+  }
+  if (status === 404) {
+    return new Error('The AI model could not be found. Please check the model name.');
+  }
+  if (status === 400 || status === 401 || status === 403) {
+    return new Error('The AI request was rejected. Please check your Gemini API key.');
+  }
+  return new Error('Something went wrong with the AI request. Please try again.');
+};
+
+// generateContent with exponential backoff (about 1s, 2s, 4s between tries)
+const generateWithRetry = async (request, maxAttempts = 4) => {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await ai.models.generateContent({ model: GEMINI_MODEL, ...request });
+    } catch (error) {
+      lastError = error;
+      if (!isRetryable(error) || attempt === maxAttempts) break;
+      const delay = 1000 * 2 ** (attempt - 1) + Math.random() * 500;
+      console.warn(`Gemini busy (attempt ${attempt}/${maxAttempts}), retrying in ${Math.round(delay)} ms`);
+      await sleep(delay);
+    }
+  }
+  console.error('Gemini request failed:', lastError);
+  throw toFriendlyError(lastError);
+};
 
 const DIYZone = () => {
   const [activeTab, setActiveTab] = useState('upload');
@@ -33,7 +107,7 @@ const DIYZone = () => {
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragOver(false);
-    
+
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       handleFileSelection(files[0]);
@@ -47,7 +121,7 @@ const DIYZone = () => {
         setError('File size too large. Please select an image under 5MB.');
         return;
       }
-      
+
       setSelectedImage(file);
       setError(null);
       const reader = new FileReader();
@@ -84,63 +158,54 @@ const DIYZone = () => {
 
     setIsAnalyzing(true);
     setError(null);
-    
+
     try {
       const base64Image = await imageToBase64(selectedImage);
-      
+
+      if (!ai) {
+        throw new Error('AI service not available. Please check your API key.');
+      }
+
       console.log('Sending request to Gemini API...');
-      
-      // Use the correct Gemini API endpoint
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${process.env.REACT_APP_GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{
+
+      // Google Gen AI SDK call (text prompt + inline image)
+      const response = await generateWithRetry({
+        contents: [
+          {
+            role: 'user',
             parts: [
               {
                 text: "Look at this image and identify what object it shows. Then provide 3 creative DIY gardening upcycling ideas specifically for this object. For each idea, provide:\n1. A creative project name\n2. A brief description of how to make it\n3. A YouTube search query to find tutorials\n\nFormat your response exactly like this:\n\nPROJECT 1: [Project Name]\nDESCRIPTION: [Brief description of the project]\nQUERY: [YouTube search query for this project]\n\nPROJECT 2: [Project Name]\nDESCRIPTION: [Brief description of the project]\nQUERY: [YouTube search query for this project]\n\nPROJECT 3: [Project Name]\nDESCRIPTION: [Brief description of the project]\nQUERY: [YouTube search query for this project]"
               },
               {
-                inline_data: {
-                  mime_type: selectedImage.type,
+                inlineData: {
+                  mimeType: selectedImage.type,
                   data: base64Image
                 }
               }
             ]
-          }],
-          generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 1024,
           }
-        })
+        ],
+        config: {
+          systemInstruction: PLAIN_TEXT_INSTRUCTION,
+          maxOutputTokens: 1024,
+          thinkingConfig: { thinkingLevel: 'LOW' },
+        },
       });
 
-      console.log('Response status:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API error response:', errorText);
-        throw new Error(`API request failed with status ${response.status}: ${errorText}`);
-      }
+      console.log('Full API response:', response);
 
-      const data = await response.json();
-      console.log('Full API response:', data);
-      
-      if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-        const analysisText = data.candidates[0].content.parts[0].text;
+      if (response.text) {
+        const analysisText = stripMarkdown(response.text);
         console.log('Analysis text:', analysisText);
-        
+
         const queries = parseAnalysisResult(analysisText);
-        setAnalysisResult({ 
-          text: analysisText, 
+        setAnalysisResult({
+          text: analysisText,
           queries,
-          rawResponse: data 
+          rawResponse: response
         });
-        
+
         // Search YouTube for the first query
         if (queries.length > 0) {
           await searchYouTube(queries[0].query);
@@ -150,7 +215,7 @@ const DIYZone = () => {
       }
     } catch (error) {
       console.error('Error analyzing image:', error);
-      setError(`Error analyzing image: ${error.message}. Please try again.`);
+      setError(`Error analyzing image: ${error.message}`);
       setAnalysisResult(null);
     }
     setIsAnalyzing(false);
@@ -159,39 +224,39 @@ const DIYZone = () => {
   // Parse Gemini response to extract queries
   const parseAnalysisResult = (text) => {
     console.log('Parsing analysis result:', text);
-    
+
     const projects = [];
     const lines = text.split('\n');
-    
+
     let currentProject = {};
-    
+
     lines.forEach(line => {
       const trimmedLine = line.trim();
-      
-      if (trimmedLine.startsWith('PROJECT')) {
+
+      if (/^PROJECT\s*\d*\s*:/i.test(trimmedLine)) {
         // If we were building a project, save it
         if (currentProject.name) {
           projects.push(currentProject);
         }
         currentProject = {
-          name: trimmedLine.replace(/PROJECT \d+:\s*/i, '').trim(),
+          name: trimmedLine.replace(/^PROJECT\s*\d*\s*:\s*/i, '').trim(),
           description: '',
           query: ''
         };
-      } else if (trimmedLine.startsWith('DESCRIPTION:')) {
-        currentProject.description = trimmedLine.replace('DESCRIPTION:', '').trim();
-      } else if (trimmedLine.startsWith('QUERY:')) {
-        currentProject.query = trimmedLine.replace('QUERY:', '').trim();
+      } else if (/^DESCRIPTION\s*:/i.test(trimmedLine)) {
+        currentProject.description = trimmedLine.replace(/^DESCRIPTION\s*:\s*/i, '').trim();
+      } else if (/^QUERY\s*:/i.test(trimmedLine)) {
+        currentProject.query = trimmedLine.replace(/^QUERY\s*:\s*/i, '').trim();
       }
     });
-    
+
     // Don't forget the last project
     if (currentProject.name) {
       projects.push(currentProject);
     }
-    
+
     console.log('Parsed projects:', projects);
-    
+
     // If parsing failed, provide fallback queries
     if (projects.length === 0) {
       return [
@@ -212,7 +277,7 @@ const DIYZone = () => {
         }
       ];
     }
-    
+
     return projects;
   };
 
@@ -222,23 +287,23 @@ const DIYZone = () => {
 
     setIsSearching(true);
     setError(null);
-    
+
     try {
       console.log('Searching YouTube for:', query);
-      
+
       // Use a fallback if YouTube API fails
       const searchQuery = encodeURIComponent(query + ' DIY gardening tutorial');
       const response = await fetch(
         `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=6&q=${searchQuery}&type=video&key=${process.env.REACT_APP_YOUTUBE_API_KEY}`
       );
-      
+
       if (!response.ok) {
         throw new Error(`YouTube API request failed with status ${response.status}`);
       }
-      
+
       const data = await response.json();
       console.log('YouTube response:', data);
-      
+
       if (data.items && data.items.length > 0) {
         setYoutubeResults(data.items.map(item => ({
           id: item.id.videoId,
@@ -412,7 +477,7 @@ const DIYZone = () => {
                     </div>
                   </div>
                 )}
-                
+
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -442,7 +507,7 @@ const DIYZone = () => {
                         </>
                       )}
                     </button>
-                    
+
                     <button 
                       className="btn btn-secondary"
                       onClick={clearAll}
@@ -452,7 +517,7 @@ const DIYZone = () => {
                       Clear
                     </button>
                   </div>
-                  
+
                   {isAnalyzing && (
                     <div className="analysis-progress">
                       <div className="progress-text">
@@ -474,7 +539,7 @@ const DIYZone = () => {
                       <p>Based on your uploaded image</p>
                     </div>
                   </div>
-                  
+
                   <div className="suggested-projects">
                     <h4>Recommended Projects:</h4>
                     <div className="projects-grid">
@@ -527,7 +592,7 @@ const DIYZone = () => {
                     </button>
                   </div>
                 </div>
-                
+
                 <div className="search-suggestions">
                   <p>Try these popular searches:</p>
                   <div className="suggestion-tags">
@@ -604,7 +669,7 @@ const DIYZone = () => {
               <Recycle size={64} className="empty-icon" />
               <h3>Transform Waste into Wonder</h3>
               <p>Upload an image of everyday items to discover creative upcycling ideas for your garden</p>
-              
+
               <div className="feature-cards">
                 <div className="feature-card">
                   <Hammer size={32} />
