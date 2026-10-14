@@ -25,7 +25,7 @@ import {
 // Google Gen AI setup (@google/genai SDK)
 // ---------------------------------------------------------------------------
 const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-3.5-flash';
+const GEMINI_MODEL = 'gemini-3.8-flash';
 const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
 
 // Tell the model to answer in plain text (no Markdown)
