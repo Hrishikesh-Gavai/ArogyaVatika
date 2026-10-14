@@ -16,15 +16,84 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+// ---------------------------------------------------------------------------
+// Google Gen AI setup (@google/genai SDK)
+// ---------------------------------------------------------------------------
+const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
+const GEMINI_MODEL = 'gemini-3.1-flash-lite';
+const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
+
+// Tell the model to answer in plain text (no Markdown)
+const PLAIN_TEXT_INSTRUCTION =
+  'Write in plain text only. Never use Markdown: no asterisks, no bold or italics, ' +
+  'no headings, no code fences, no backticks and no bullet symbols.';
+
+// Safety net: strip any Markdown the model still adds (**, *, #, `, ```)
+const stripMarkdown = (text = '') =>
+  String(text)
+    .replace(/```[a-zA-Z]*\n?/g, '')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*[*+-]\s+/gm, '')
+    .replace(/\*/g, '')
+    .trim();
+
+// Retry automatically when Gemini is busy (503 / 429 / 500 / 504)
+const RETRYABLE_STATUS = [429, 500, 503, 504];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryable = (error) => {
+  const status = error?.status ?? error?.code;
+  return (
+    RETRYABLE_STATUS.includes(status) ||
+    /UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|overloaded|Failed to fetch/i.test(error?.message || '')
+  );
+};
+
+// Turn raw API errors into short, readable messages for the UI
+const toFriendlyError = (error) => {
+  const status = error?.status ?? error?.code;
+  const message = error?.message || '';
+  if (status === 503 || /UNAVAILABLE|high demand|overloaded/i.test(message)) {
+    return new Error('The AI service is busy right now. Please try again in a moment.');
+  }
+  if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(message)) {
+    return new Error('AI usage limit reached. Please wait a minute and try again.');
+  }
+  if (status === 404) {
+    return new Error('The AI model could not be found. Please check the model name.');
+  }
+  if (status === 400 || status === 401 || status === 403) {
+    return new Error('The AI request was rejected. Please check your Gemini API key.');
+  }
+  return new Error('Something went wrong with the AI request. Please try again.');
+};
+
+// generateContent with exponential backoff (about 1s, 2s, 4s between tries)
+const generateWithRetry = async (request, maxAttempts = 4) => {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await ai.models.generateContent({ model: GEMINI_MODEL, ...request });
+    } catch (error) {
+      lastError = error;
+      if (!isRetryable(error) || attempt === maxAttempts) break;
+      const delay = 1000 * 2 ** (attempt - 1) + Math.random() * 500;
+      console.warn(`Gemini busy (attempt ${attempt}/${maxAttempts}), retrying in ${Math.round(delay)} ms`);
+      await sleep(delay);
+    }
+  }
+  console.error('Gemini request failed:', lastError);
+  throw toFriendlyError(lastError);
+};
+
 const Microlearning = () => {
   const [activeCategory, setActiveCategory] = useState('all');
   const [aiFacts, setAiFacts] = useState([]);
   const [loadingFacts, setLoadingFacts] = useState(true);
   const [factError, setFactError] = useState(false);
-
-  // Initialize Google GenAI with API key from environment
-  const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
-  const ai = new GoogleGenAI({ apiKey: API_KEY });
 
   // Sample course data with YouTube links and Unsplash thumbnails
   const courses = [
@@ -113,7 +182,7 @@ const Microlearning = () => {
   // Fetch AI facts using the new Google GenAI SDK
   const fetchAIFacts = async () => {
     // Don't try to fetch if no API key
-    if (!API_KEY) {
+    if (!ai) {
       console.log('No Gemini API key found, using fallback facts');
       setAiFacts(getFallbackFacts());
       setLoadingFacts(false);
@@ -126,7 +195,7 @@ const Microlearning = () => {
       setFactError(false);
 
       const prompt = `Generate 6 interesting, educational, and surprising facts about medicinal plants, Ayurveda, AYUSH system, herbal gardening, and traditional Indian medicine. 
-      
+
       Requirements:
       - Each fact should be unique and surprising
       - Include relevant emojis for each fact
@@ -135,40 +204,43 @@ const Microlearning = () => {
       - Each fact should be 1-2 sentences maximum
       - Return only the facts, one per line, no numbering
       - Include specific plant names like Tulsi, Ashwagandha, Turmeric, Neem, Brahmi, etc.
-      
+
       Example format:
       🌿 Tulsi (Holy Basil) can naturally purify air and is worshipped in Hindu households for its spiritual significance.
       💊 Ashwagandha can reduce cortisol levels by up to 30% and has been used for 3000 years in Ayurveda.`;
 
-      // Use the new Google GenAI SDK
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash", // Using the recommended model
+      // Google Gen AI SDK call
+      const response = await generateWithRetry({
         contents: prompt,
+        config: {
+          systemInstruction: PLAIN_TEXT_INSTRUCTION,
+          thinkingConfig: { thinkingLevel: 'LOW' },
+        },
       });
 
       if (!response.text) {
         throw new Error('No response text from AI');
       }
 
-      const text = response.text;
-      
+      const text = stripMarkdown(response.text);
+
       // Parse the response into individual facts
       const facts = text.split('\n')
         .filter(line => line.trim().length > 10 && !line.includes('```')) // Filter out short lines and code blocks
-        .slice(0, 6) // Take first 5 facts
+        .slice(0, 6) // Take first 6 facts
         .map(fact => fact.replace(/^[-•\d\s\.]+/, '').trim()) // Remove bullets and numbering
         .filter(fact => fact.length > 0);
 
       if (facts.length === 0) {
         // If parsing fails, use the raw text
-        const rawFacts = text.split('\n').filter(line => line.trim().length > 20).slice(0, 5);
+        const rawFacts = text.split('\n').map(line => line.trim()).filter(line => line.length > 20).slice(0, 6);
         setAiFacts(rawFacts.length > 0 ? rawFacts : getFallbackFacts());
       } else {
         setAiFacts(facts);
       }
-      
+
       setLoadingFacts(false);
-      
+
     } catch (error) {
       console.error('Error fetching AI facts:', error);
       setFactError(true);
@@ -218,12 +290,12 @@ const Microlearning = () => {
           </div>
         </div>
       </div>
-      
+
       <div className="course-content">
         <div className="course-category">{course.category}</div>
         <h3 className="course-title">{course.title}</h3>
         <p className="course-description">{course.description}</p>
-        
+
         <div className="course-meta">
           <div className="meta-item">
             <Clock size={16} />
@@ -238,9 +310,9 @@ const Microlearning = () => {
             <span>{course.rating}</span>
           </div>
         </div>
-        
+
         <div className="course-level">{course.level}</div>
-        
+
         <button 
           className="btn btn-primary course-btn"
           onClick={() => handleStartCourse(course.youtubeId)}
@@ -280,7 +352,7 @@ const Microlearning = () => {
               {loadingFacts ? 'Generating...' : 'New Facts'}
             </button>
           </div>
-          
+
           <div className="facts-container">
             {loadingFacts ? (
               <div className="facts-loading">
@@ -379,7 +451,7 @@ const Microlearning = () => {
             <h3>Featured Courses</h3>
             <span className="section-badge">{filteredCourses.length} courses</span>
           </div>
-          
+
           {filteredCourses.length === 0 ? (
             <div className="no-results">
               <BookOpen size={64} />
@@ -402,7 +474,7 @@ const Microlearning = () => {
             <h2>Structured Learning Paths</h2>
             <p>Follow these curated paths to master herbal wellness step by step</p>
           </div>
-          
+
           <div className="path-cards">
             <div className="path-card">
               <div className="path-icon gardening">
@@ -414,7 +486,7 @@ const Microlearning = () => {
                 <span>3 courses • 45 minutes</span>
               </div>
             </div>
-            
+
             <div className="path-card">
               <div className="path-icon medicine">
                 <Leaf size={32} />
@@ -425,7 +497,7 @@ const Microlearning = () => {
                 <span>4 courses • 1.5 hours</span>
               </div>
             </div>
-            
+
             <div className="path-card">
               <div className="path-icon advanced">
                 <GraduationCap size={32} />
